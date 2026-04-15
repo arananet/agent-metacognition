@@ -10,6 +10,7 @@ status: review
 author: "Eduardo Arana"
 created_at: "2026-04-15"
 updated_at: "2026-04-15"
+updated_reason: "Added documentation acceptance criterion (README with diagrams)"
 
 description: |
   A proof-of-concept that applies the Meta Cognition paradigm to AI agents built
@@ -30,6 +31,7 @@ acceptance_criteria:
   - "Given a self-evaluation report, when the agent is invoked for the next task, then the proposed instruction delta from the previous run is prepended to the system prompt so the agent can act on its own feedback."
   - "Given any agent run, when logging is active, then every metacognitive cycle (observe → evaluate → reflect → update) is recorded in a structured log for offline analysis."
   - "Given the POC CLI, when a user runs `python main.py --mode compare --tasks <file>`, then the tool executes both agents, prints a side-by-side comparison table, and writes a JSON report to `results/`."
+  - "Given the repository, when a developer reads README.md, then they can understand the metacognition concept, the system architecture (via an ASCII or Mermaid diagram), how to run the POC, the output schema, and the theoretical references that ground the work."
 
 out_of_scope:
   - "Persistent long-term memory across sessions (only within-session evolution is in scope)."

@@ -2,7 +2,8 @@
 
 > **Author:** Eduardo Arana  
 > **Status:** Proof of Concept  
-> **Model:** Claude (Anthropic SDK — `claude-opus-4-6`)
+> **Model:** `claude-opus-4-6` (Anthropic SDK)  
+> **Spec:** `.openspec/specs/agent-metacognition-poc.spec.yaml`
 
 A proof-of-concept that applies the **Meta Cognition** paradigm to AI agents.
 A metacognitive layer wraps a standard Claude agent, observes each task run,
@@ -16,53 +17,138 @@ intervention.
 
 Metacognition is _"thinking about thinking"_ — the capacity to monitor, evaluate,
 and regulate one's own cognitive processes.  First formalised by developmental
-psychologist John Flavell in 1979, it is now recognised as a key factor in
-effective learning and problem-solving.
+psychologist John Flavell (1979), it is now a cornerstone of learning science.
 
 > _"Metacognition refers to one's knowledge concerning one's own cognitive processes
 > and products or anything related to them."_  
 > — Flavell, J. H. (1979)
 
-In this POC the concept is mapped onto an agentic loop:
+The concept maps onto an agent loop as four phases:
 
-| Human metacognition | Agent equivalent |
-|---|---|
-| Observe your own thought process | Record the full agent response |
-| Evaluate quality of reasoning | Isolated evaluator Claude call → `SelfEvaluationReport` |
-| Identify failure modes | `failure_modes[]` + `reasoning_quality_score` |
-| Adjust strategy for next attempt | `instruction_delta` prepended to system prompt |
+| Human metacognition | Agent phase | Implementation |
+|---|---|---|
+| Observe thought process | **Observe** | Record full agent response |
+| Evaluate reasoning quality | **Evaluate** | Isolated evaluator Claude call |
+| Identify failure modes | **Reflect** | `failure_modes[]` + `reasoning_quality_score` |
+| Adjust strategy for next attempt | **Update** | `instruction_delta` → system prompt |
 
 ---
 
-## Architecture
+## System Architecture
 
+### High-level flow
+
+```mermaid
+flowchart TD
+    T([Task]) --> BA[BaselineAgent\nstreaming Claude call]
+    BA --> R[Response]
+
+    R --> OBS[Observe\nrecord response]
+    OBS --> EVA[Evaluate\nisolated Claude call]
+    EVA --> REP[SelfEvaluationReport\ntask_outcome · score · failure_modes · delta]
+    REP --> REF[Reflect\ndid delta change?]
+    REF --> UPD[Update\nstore delta per category]
+
+    UPD --> DS[(Delta Store\ncategory → instruction_delta)]
+    DS --> NXT([Next task in\nsame category])
+    NXT --> INJ[Inject delta\nprepend to system prompt]
+    INJ --> BA
+
+    EVA --> LOG[CycleLogger\nresults/cycles_*.jsonl]
+    UPD --> RPT[ComparisonReport\nresults/comparison_*.json]
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                       Metacognitive Loop                       │
-│                                                                │
-│  Task ──► BaselineAgent ──► response                          │
-│                │                │                              │
-│           [OBSERVE]        [EVALUATE] ◄── MetacognitiveEvaluator
-│                │                │         (isolated Claude call)
-│           [REFLECT]  ◄──── SelfEvaluationReport               │
-│                │              (task_outcome, score,            │
-│           [UPDATE]             failure_modes,                  │
-│                │               instruction_delta)              │
-│           delta store                                          │
-│           {category → delta}                                   │
-│                │                                               │
-│  Next Task ──► BaselineAgent(system = delta + base_prompt)    │
-└────────────────────────────────────────────────────────────────┘
+
+### Component diagram
+
+```mermaid
+classDiagram
+    class BaselineAgent {
+        +client: Anthropic
+        +model: str
+        +run(task, injected_delta) AgentRun
+        -_build_system(delta) str
+    }
+
+    class MetacognitiveEvaluator {
+        +client: Anthropic
+        +evaluate(task, run) SelfEvaluationReport
+        -_parse(raw) SelfEvaluationReport
+    }
+
+    class MetaAgent {
+        -_agent: BaselineAgent
+        -_evaluator: MetacognitiveEvaluator
+        -_logger: CycleLogger
+        -_deltas: dict
+        +run(task) AgentRun
+        +current_delta(category) str
+    }
+
+    class CycleLogger {
+        +path: Path
+        +log(cycle) void
+        +close() void
+    }
+
+    class SelfEvaluationReport {
+        +task_outcome: str
+        +success: bool
+        +reasoning_quality_score: float
+        +failure_modes: list
+        +instruction_delta: str
+    }
+
+    class MetacognitiveLog {
+        +cycle_id: str
+        +phase_observe
+        +phase_evaluate
+        +phase_reflect
+        +phase_update
+        +to_dict() dict
+    }
+
+    MetaAgent --> BaselineAgent
+    MetaAgent --> MetacognitiveEvaluator
+    MetaAgent --> CycleLogger
+    MetacognitiveEvaluator ..> SelfEvaluationReport : produces
+    CycleLogger ..> MetacognitiveLog : writes
 ```
 
-**Key design decisions:**
+### Sequence — one task run
 
-- The evaluator is a **separate, isolated Claude call** — it never sees the
-  agent's own system prompt or reasoning chain, avoiding self-serving bias.
-- Instruction deltas are stored **per task category** in memory and evolve
-  with each completed run.
-- Both agents use the same model and base system prompt; the only difference
-  is the prepended delta.
+```mermaid
+sequenceDiagram
+    participant CLI as main.py
+    participant BA as BaselineAgent
+    participant MA as MetaAgent
+    participant EVA as Evaluator
+    participant LOG as CycleLogger
+    participant Claude as Claude API
+
+    CLI->>BA: run(task)
+    BA->>Claude: stream(system, task.prompt)
+    Claude-->>BA: response text
+    BA-->>CLI: AgentRun
+
+    CLI->>EVA: evaluate(task, baseline_run)
+    EVA->>Claude: create(evaluator_prompt)
+    Claude-->>EVA: SelfEvaluationReport JSON
+    EVA-->>CLI: baseline_run.success ✓/✗
+
+    CLI->>MA: run(task)
+    MA->>MA: look up delta[task.category]
+    MA->>BA: run(task, injected_delta)
+    BA->>Claude: stream(delta + system, task.prompt)
+    Claude-->>BA: response text
+    BA-->>MA: AgentRun
+    MA->>EVA: evaluate(task, meta_run)
+    EVA->>Claude: create(evaluator_prompt)
+    Claude-->>EVA: SelfEvaluationReport JSON
+    EVA-->>MA: meta_run.success ✓/✗
+    MA->>MA: update delta[task.category]
+    MA->>LOG: log(MetacognitiveLog)
+    MA-->>CLI: AgentRun
+```
 
 ---
 
@@ -70,7 +156,7 @@ In this POC the concept is mapped onto an agentic loop:
 
 ```
 agent-metacognition/
-├── main.py                  # CLI — `--mode compare --tasks <file>`
+├── main.py                  # CLI — --mode compare --tasks <file>
 ├── requirements.txt
 ├── src/
 │   ├── models.py            # Task, AgentRun, SelfEvaluationReport,
@@ -78,11 +164,12 @@ agent-metacognition/
 │   ├── agent.py             # BaselineAgent  (streaming + prompt caching)
 │   ├── evaluator.py         # MetacognitiveEvaluator (isolated judge)
 │   ├── meta_agent.py        # MetaAgent  (observe → evaluate → reflect → update)
-│   └── logger.py            # CycleLogger  (JSON Lines output)
+│   └── logger.py            # CycleLogger  (JSON Lines)
 ├── tasks/
 │   └── general.yaml         # 9 benchmark tasks (3 categories × 3 tasks)
-├── results/                 # Runtime output (JSON reports + cycle logs)
-└── .openspec/               # OpenSpec configuration and feature spec
+├── results/                 # Runtime output — JSON reports + cycle logs
+└── .openspec/
+    └── specs/agent-metacognition-poc.spec.yaml
 ```
 
 ---
@@ -117,28 +204,29 @@ The CLI will:
    - `comparison_<timestamp>.json` — full report with per-task outcomes and all cycle logs.
    - `cycles_<timestamp>.jsonl` — one JSON Line per metacognitive cycle for offline analysis.
 
-### Optional flags
+### CLI flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--tasks FILE` | — | YAML benchmark task file (required) |
-| `--output DIR` | `results/` | Directory for JSON output |
+| `--mode compare` | — | Required. Executes both agents on the task set. |
+| `--tasks FILE` | — | Required. Path to a YAML benchmark task file. |
+| `--output DIR` | `results/` | Directory for JSON output. |
 
 ---
 
 ## Benchmark Tasks
 
-`tasks/general.yaml` contains 9 tasks across three categories:
+`tasks/general.yaml` — 9 tasks across three categories:
 
-| Category | Tasks | Pattern the meta agent learns |
+| Category | Tasks | Reasoning pattern the meta agent learns |
 |---|---|---|
-| `logical_reasoning` | Seating constraints, Truth-teller puzzle, Compound inference | Systematic enumeration before elimination |
-| `mathematical` | Mixture problem, Rate-work problem, Quadratic word problem | Define variables explicitly; set up equations first |
-| `code_analysis` | Off-by-one bug, List mutation bug, Complexity analysis | Trace execution line by line; state error type and location |
+| `logical_reasoning` | Seating constraints · Truth-teller puzzle · Compound inference | Enumerate possibilities before eliminating |
+| `mathematical` | Mixture · Rate-work · Quadratic word problem | Define variables first; set up equations before computing |
+| `code_analysis` | Off-by-one bug · List mutation bug · Complexity analysis | Trace execution line-by-line; state error type and location |
 
-Tasks within a category share a reasoning pattern so that a failure on task _N_
-generates a useful `instruction_delta` that can improve performance on tasks
-_N+1_ and _N+2_ — directly demonstrating within-category self-evolution.
+Tasks within a category share a reasoning pattern so a failure on task _N_
+generates a useful `instruction_delta` that improves tasks _N+1_ and _N+2_,
+demonstrating within-category self-evolution.
 
 ---
 
@@ -150,7 +238,7 @@ _N+1_ and _N+2_ — directly demonstrating within-category self-evolution.
 {
   "task_outcome": "The agent correctly identified the seating arrangement.",
   "success": true,
-  "reasoning_quality_score": 7.5,    // 0–10
+  "reasoning_quality_score": 7.5,       // 0–10
   "failure_modes": [],
   "instruction_delta": "When solving constraint-satisfaction problems, enumerate all candidate positions for the fixed variable first, then apply remaining constraints in order of most restrictive."
 }
@@ -160,14 +248,16 @@ _N+1_ and _N+2_ — directly demonstrating within-category self-evolution.
 
 ```jsonc
 {
-  "cycle_id": "e3f7a1b2-...",
+  "cycle_id": "e3f7a1b2-…",
   "task_id": "lr-002",
   "task_category": "logical_reasoning",
   "timestamp": "2026-04-15T14:23:01.123456",
-  "phase_observe":  { "agent_success": false, "injected_delta": null, "..." },
-  "phase_evaluate": { "success": false, "reasoning_quality_score": 4.0, "..." },
+  "phase_observe":  { "agent_success": false, "injected_delta": null },
+  "phase_evaluate": { "success": false, "reasoning_quality_score": 4.0,
+                      "failure_modes": ["jumped to conclusion without enumeration"],
+                      "instruction_delta": "When answering logic puzzles…" },
   "phase_reflect":  { "previous_delta": null, "delta_changed": true },
-  "phase_update":   { "new_delta": "When answering logic puzzles..." }
+  "phase_update":   { "new_delta": "When answering logic puzzles…" }
 }
 ```
 
@@ -187,52 +277,33 @@ _N+1_ and _N+2_ — directly demonstrating within-category self-evolution.
 
 - **Schraw, G., & Dennison, R. S. (1994).** "Assessing Metacognitive Awareness."  
   *Contemporary Educational Psychology, 19*(4), 460–475.  
-  Introduces the *Metacognitive Awareness Inventory* (knowledge of cognition +
-  regulation of cognition) — the two-factor model this POC maps onto evaluate
-  and update phases.
+  Introduces the two-factor model (knowledge of cognition + regulation of cognition)
+  that maps onto the evaluate and update phases in this POC.
 
 ### Self-reflection and self-improvement in LLMs
 
 - **Shinn, N., Cassano, F., Labash, A., Gopinath, A., Narasimhan, K., & Yao, S. (2023).**  
-  "Reflexion: Language Agents with Verbal Reinforcement Learning."  
-  *NeurIPS 2023.*  
+  "Reflexion: Language Agents with Verbal Reinforcement Learning." *NeurIPS 2023.*  
   <https://arxiv.org/abs/2303.11366>  
-  Closest prior work: agents reflect on failed task trajectories and store verbal
-  reinforcement signals — directly inspired this POC's `instruction_delta` design.
+  Closest prior work: agents reflect on failed trajectories and store verbal
+  reinforcement signals — directly inspired the `instruction_delta` design.
 
 - **Madaan, A., Tandon, N., Gupta, P., et al. (2023).**  
-  "Self-Refine: Iterative Refinement with Self-Feedback."  
-  *NeurIPS 2023.*  
+  "Self-Refine: Iterative Refinement with Self-Feedback." *NeurIPS 2023.*  
   <https://arxiv.org/abs/2303.17651>  
-  Shows that LLMs can iteratively improve their own outputs via self-generated
-  feedback, without additional training.
+  LLMs iteratively improve their own outputs via self-generated feedback,
+  without additional training.
 
 - **Yao, S., Zhao, J., Yu, D., et al. (2023).**  
-  "ReAct: Synergizing Reasoning and Acting in Language Models."  
-  *ICLR 2023.*  
+  "ReAct: Synergizing Reasoning and Acting in Language Models." *ICLR 2023.*  
   <https://arxiv.org/abs/2210.03629>  
-  Foundational agent paper combining chain-of-thought reasoning with tool use
-  — underpins the single-turn agent loop used here.
+  Foundational agent paper combining chain-of-thought reasoning with tool use.
 
-### Prompt caching and efficient inference
+### Anthropic SDK & features used
 
 - **Anthropic — Prompt Caching.**  
-  Official documentation for the `cache_control` API used in this POC to cache
-  stable system prompts across tasks.  
+  `cache_control` API used to cache stable system prompts across tasks.  
   <https://platform.claude.com/docs/en/build-with-claude/prompt-caching>
 
-- **Anthropic — Claude API (Python SDK).**  
-  SDK used for all agent and evaluator calls.  
+- **Anthropic — Claude Python SDK.**  
   <https://github.com/anthropics/anthropic-sdk-python>
-
-### Related frameworks
-
-- **LangChain — Self-Evaluation Chains.**  
-  Higher-level abstraction for LLM self-evaluation; this POC intentionally avoids
-  LangChain to keep the metacognitive loop transparent and inspectable.  
-  <https://python.langchain.com/docs/guides/evaluation/>
-
-- **AutoGen (Microsoft) — Conversational Agent Patterns.**  
-  Multi-agent framework where agents critique each other's outputs — a related but
-  architecturally different approach to self-improvement.  
-  <https://microsoft.github.io/autogen/>
