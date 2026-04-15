@@ -1,0 +1,272 @@
+# Benchmark task set for the Agent Meta Cognition POC.
+#
+# Design rationale:
+#   - 3 categories × 3 tasks = 9 tasks.
+#   - Tasks within a category share a reasoning pattern so that a failure on
+#     task N generates an instruction_delta that improves performance on N+1
+#     and N+2 — demonstrating within-category self-evolution.
+#   - Tasks are presented in category order so the meta agent has the maximum
+#     opportunity to accumulate and apply learning.
+#
+# Author: Eduardo Arana
+
+tasks:
+
+  # ── Category: logical_reasoning ─────────────────────────────────────────
+  # Pattern: constraint satisfaction requiring systematic enumeration.
+  # Agents often make incorrect leaps; the delta teaches them to enumerate
+  # possibilities before eliminating them.
+
+  - id: "lr-001"
+    category: "logical_reasoning"
+    title: "Seating Arrangement"
+    difficulty: "medium"
+    prompt: |
+      Five people — Alice, Bob, Carol, Dave, Eve — are seated in a row of five
+      chairs numbered 1 (leftmost) to 5 (rightmost).
+
+      Constraints:
+        • Alice is NOT adjacent to Bob.
+        • Bob IS adjacent to Carol.
+        • Dave sits at one of the two ends (chair 1 or chair 5).
+        • Eve IS adjacent to Alice.
+
+      If Dave sits in chair 1, list ALL valid seating arrangements (use the
+      format: chair1-chair2-chair3-chair4-chair5).
+    expected_outcome: |
+      The response correctly applies all four constraints simultaneously.
+      It identifies that Dave is fixed at chair 1.  It recognises that
+      Bob-Carol must be adjacent (either BC or CB).  It correctly places
+      Eve adjacent to Alice, and Alice NOT adjacent to Bob.
+      The final list of arrangements is derived by systematic enumeration,
+      not by guessing.  A correct answer includes at least one valid
+      arrangement and does not include any invalid ones.
+    tags: ["constraint_satisfaction", "enumeration"]
+
+  - id: "lr-002"
+    category: "logical_reasoning"
+    title: "Truth-Teller and Liar"
+    difficulty: "medium"
+    prompt: |
+      On an island, every inhabitant is either a Knight (always tells the truth)
+      or a Knave (always lies).  You meet three inhabitants: Ava, Ben, Cam.
+
+        • Ava says: "At least one of Ben and Cam is a Knave."
+        • Ben says: "Ava is a Knight."
+        • Cam says: "I am a Knave."
+
+      Determine the type (Knight or Knave) of each person.  Show your reasoning.
+    expected_outcome: |
+      The response correctly identifies:
+        - Cam cannot be a Knight (a Knight cannot truly say "I am a Knave"),
+          so Cam is a Knave.
+        - Ava's statement "at least one of Ben and Cam is a Knave" is TRUE
+          (since Cam is a Knave), so Ava is a Knight.
+        - Ben says "Ava is a Knight" which is TRUE, so Ben is a Knight.
+      Final answer: Ava = Knight, Ben = Knight, Cam = Knave.
+      The reasoning should proceed step-by-step from Cam's self-contradictory
+      statement outward.
+    tags: ["logic_puzzle", "knights_knaves"]
+
+  - id: "lr-003"
+    category: "logical_reasoning"
+    title: "Compound Inference"
+    difficulty: "hard"
+    prompt: |
+      Consider the following statements:
+        P1: All engineers who passed the exam received a certificate.
+        P2: Some engineers who received a certificate got a promotion.
+        P3: No one who got a promotion failed the exam.
+        P4: Maria is an engineer who did NOT receive a certificate.
+
+      Answer each sub-question with a brief justification:
+        (a) Did Maria pass the exam?
+        (b) Can we conclude that Maria did NOT get a promotion?
+        (c) Is it possible that some engineers who passed the exam did NOT get a
+            promotion?
+    expected_outcome: |
+      (a) Maria did NOT pass the exam.  By P1, passing → certificate.
+          Maria has no certificate, so by contrapositive she did not pass.
+      (b) Yes, we can conclude Maria did NOT get a promotion.  By P3,
+          promotion → passed exam.  Maria did not pass (from a), so by
+          contrapositive she did not get a promotion.
+      (c) Yes, it is possible.  P2 says only SOME certificate-holders got a
+          promotion, so there can be certificate-holders (and therefore
+          passers) who did not get a promotion.
+      The response should use contrapositive reasoning explicitly for (a)
+      and (b), and recognise the existential quantifier in P2 for (c).
+    tags: ["syllogism", "contrapositive", "quantifiers"]
+
+  # ── Category: mathematical ───────────────────────────────────────────────
+  # Pattern: word problems requiring explicit variable definition + algebra.
+  # Agents often skip variable setup and compute ad-hoc; the delta teaches
+  # them to define variables first, set up equations, then solve.
+
+  - id: "math-001"
+    category: "mathematical"
+    title: "Mixture Problem"
+    difficulty: "medium"
+    prompt: |
+      A chemist has two solutions: Solution A is 30% acid and Solution B is
+      70% acid.  She needs to make 200 ml of a 45% acid solution by mixing
+      A and B.
+
+      How many millilitres of each solution should she use?
+      Show your working clearly.
+    expected_outcome: |
+      The response defines variables (e.g. x = ml of Solution A,
+      200 - x = ml of Solution B) and sets up the equation:
+        0.30x + 0.70(200 - x) = 0.45 × 200
+      Solving: 0.30x + 140 - 0.70x = 90  →  -0.40x = -50  →  x = 125.
+      Answer: 125 ml of Solution A and 75 ml of Solution B.
+      The response must show each algebraic step explicitly.
+    tags: ["algebra", "mixture", "equations"]
+
+  - id: "math-002"
+    category: "mathematical"
+    title: "Rate–Work Problem"
+    difficulty: "medium"
+    prompt: |
+      Pipe A can fill a tank in 6 hours.  Pipe B can fill the same tank in
+      4 hours.  Pipe C can drain the tank in 12 hours.
+
+      If all three pipes are open simultaneously, how long will it take to
+      fill the tank from empty?  Express your answer as a simplified fraction
+      and as a decimal rounded to two places.
+    expected_outcome: |
+      The response defines rates (fraction of tank per hour):
+        A = 1/6, B = 1/4, C drains at -1/12.
+      Combined rate = 1/6 + 1/4 - 1/12 = 2/12 + 3/12 - 1/12 = 4/12 = 1/3.
+      Time to fill = 1 / (1/3) = 3 hours exactly.
+      Answer: 3 hours (or 3.00 hours).
+      The response should set up individual rates as fractions before
+      combining them.
+    tags: ["rates", "fractions", "word_problem"]
+
+  - id: "math-003"
+    category: "mathematical"
+    title: "Quadratic Word Problem"
+    difficulty: "hard"
+    prompt: |
+      A rectangular garden has a perimeter of 56 metres.  Its area is
+      192 square metres.  Find the dimensions of the garden (length and
+      width).  Show all steps including the quadratic equation you form.
+    expected_outcome: |
+      Let length = l, width = w.
+      From perimeter: 2(l + w) = 56  →  l + w = 28  →  l = 28 - w.
+      Substituting into area: w(28 - w) = 192  →  28w - w² = 192
+        →  w² - 28w + 192 = 0.
+      Discriminant: 784 - 768 = 16.  Roots: w = (28 ± 4) / 2 → w = 16 or w = 12.
+      If w = 16, l = 12 (same rectangle, just labelled differently).
+      Answer: the garden is 16 m × 12 m.
+      The response must explicitly form and solve the quadratic equation.
+    tags: ["quadratic", "geometry", "word_problem"]
+
+  # ── Category: code_analysis ──────────────────────────────────────────────
+  # Pattern: identifying bugs and complexity issues by tracing execution.
+  # Agents often give vague answers; the delta teaches them to trace line
+  # by line and state the exact error type and location.
+
+  - id: "code-001"
+    category: "code_analysis"
+    title: "Off-by-One Error"
+    difficulty: "easy"
+    prompt: |
+      The following Python function is supposed to return the sum of all
+      integers from 1 to n (inclusive), but it contains a bug:
+
+      ```python
+      def sum_to_n(n):
+          total = 0
+          for i in range(n):   # line A
+              total += i       # line B
+          return total
+      ```
+
+      (a) What is the bug?  State the exact line and explain what it does
+          versus what it should do.
+      (b) Write the corrected version of the function.
+      (c) What does sum_to_n(5) return with the buggy version, and what
+          should it return?
+    expected_outcome: |
+      (a) Line A: range(n) generates 0, 1, …, n-1 (does not include n).
+          Line B: even if range were correct, i starts at 0 instead of 1,
+          so 0 is added unnecessarily (though this cancels out).
+          The core bug is range(n) instead of range(1, n+1).
+      (b) Corrected: for i in range(1, n+1): total += i.  Or equivalently:
+          range(n) with total += (i+1).
+      (c) Buggy sum_to_n(5) = 0+1+2+3+4 = 10.  Correct answer = 15.
+      The response must identify the exact line, explain the off-by-one
+      mechanism, and give both the buggy and correct output for n=5.
+    tags: ["debugging", "off_by_one", "python"]
+
+  - id: "code-002"
+    category: "code_analysis"
+    title: "Mutation During Iteration Bug"
+    difficulty: "medium"
+    prompt: |
+      The following Python snippet is supposed to remove all occurrences of
+      the value 3 from a list, but it does not work correctly:
+
+      ```python
+      numbers = [1, 3, 3, 4, 3, 5]
+      for i in range(len(numbers)):
+          if numbers[i] == 3:
+              numbers.pop(i)
+      print(numbers)
+      ```
+
+      (a) Explain precisely why this code fails.  What error or incorrect
+          behaviour occurs, and why?
+      (b) Trace the execution step by step until the failure.
+      (c) Provide a correct version that removes all 3s without this issue.
+    expected_outcome: |
+      (a) Mutating a list while iterating over its original indices causes
+          an IndexError once the list shrinks below the original length,
+          and also causes elements to be skipped because indices shift after
+          each pop.
+      (b) Trace: i=0 numbers[0]=1 skip; i=1 numbers[1]=3 pop → [1,3,4,3,5];
+          i=2 numbers[2]=4 skip (3 at index 1 is now skipped!);
+          i=3 numbers[3]=3 pop → [1,3,4,5]; i=4 → IndexError (list has 4 elements).
+      (c) Correct: numbers = [x for x in numbers if x != 3],
+          or iterate over a copy: for x in numbers[:]: ...
+      The response must explain the skipping issue AND the IndexError,
+      and give the step-by-step trace.
+    tags: ["debugging", "list_mutation", "python"]
+
+  - id: "code-003"
+    category: "code_analysis"
+    title: "Complexity Analysis"
+    difficulty: "hard"
+    prompt: |
+      Analyse the time and space complexity of the following function:
+
+      ```python
+      def find_pairs(nums, target):
+          seen = set()
+          pairs = []
+          for num in nums:               # loop A
+              complement = target - num
+              if complement in seen:     # line B
+                  pairs.append((complement, num))
+              seen.add(num)
+          return pairs
+      ```
+
+      (a) What is the time complexity?  Justify by analysing each operation.
+      (b) What is the space complexity?  Justify.
+      (c) Compare this to the naïve O(n²) approach.  What algorithmic
+          technique makes this solution more efficient?
+    expected_outcome: |
+      (a) O(n) time.  Loop A iterates n times.  The set lookup on line B
+          (`complement in seen`) is O(1) average for a hash set.  All other
+          operations inside the loop are O(1).  Total: O(n).
+      (b) O(n) space.  In the worst case `seen` holds all n elements.
+          `pairs` holds at most n/2 pairs, also O(n).
+      (c) The naïve approach uses a nested loop (O(n²)) to check all pairs.
+          This solution uses a hash set to trade O(n) extra space for O(n)
+          time — a classic space-time trade-off using hashing / the
+          complement pattern.
+      The response must correctly state O(n) time AND O(n) space,
+      with explicit justification for each.
+    tags: ["complexity", "big_o", "hashing", "python"]
