@@ -1,0 +1,58 @@
+# Feature Spec — Agent Meta Cognition POC
+# Status: review
+# Author: Eduardo Arana
+
+title: "Agent Meta Cognition — Self-Evolve and Self-Evaluation POC"
+slug: "agent-metacognition-poc"
+type: feature
+status: review
+
+author: "Eduardo Arana"
+created_at: "2026-04-15"
+updated_at: "2026-04-15"
+
+description: |
+  A proof-of-concept that applies the Meta Cognition paradigm to AI agents built
+  with the Claude SDK. The system wraps an agent's execution loop with a
+  metacognitive layer that observes, evaluates, and reflects on each reasoning
+  step. After every task the meta layer scores the agent's performance, identifies
+  failure patterns, and generates updated instructions (a new "system prompt
+  delta") that are injected into the next invocation — enabling the agent to
+  self-evolve without human intervention.
+
+  The primary goal is to measure whether a Claude-powered agent that applies
+  Meta Cognition outperforms a baseline agent (same task, no self-reflection)
+  on a suite of standardised benchmark tasks.
+
+acceptance_criteria:
+  - "Given a baseline agent and a metacognitive agent, when both are run on the same benchmark task set, then the metacognitive agent achieves a measurably higher success rate (≥10 pp improvement over 50 runs)."
+  - "Given a completed agent run, when the meta layer evaluates it, then it produces a structured self-evaluation report containing: task outcome, reasoning quality score (0-10), identified failure modes, and a proposed instruction delta."
+  - "Given a self-evaluation report, when the agent is invoked for the next task, then the proposed instruction delta from the previous run is prepended to the system prompt so the agent can act on its own feedback."
+  - "Given any agent run, when logging is active, then every metacognitive cycle (observe → evaluate → reflect → update) is recorded in a structured log for offline analysis."
+  - "Given the POC CLI, when a user runs `python main.py --mode compare --tasks <file>`, then the tool executes both agents, prints a side-by-side comparison table, and writes a JSON report to `results/`."
+
+out_of_scope:
+  - "Persistent long-term memory across sessions (only within-session evolution is in scope)."
+  - "Multi-agent coordination or swarm behaviours."
+  - "Fine-tuning or weight updates — all self-improvement is prompt-based."
+  - "Production deployment, scalability, or cost optimisation."
+  - "Support for models other than Claude (Anthropic SDK only)."
+
+technical_notes: |
+  Stack:
+  - Language: Python 3.11+
+  - SDK: anthropic (Claude SDK) with prompt caching enabled
+  - Agent loop: custom — no LangChain/LlamaIndex dependency
+  - Metacognitive layer: a second Claude call after each agent turn that receives
+    the full conversation transcript and a structured evaluation prompt
+  - Instruction delta storage: in-memory dict keyed by task category; merged into
+    system prompt at invocation time
+  - Benchmark tasks: stored as YAML in `tasks/` directory; each task has an
+    `expected_outcome` field used by the evaluator
+
+  Key design decision: the metacognitive evaluator uses a separate Claude call
+  (not a tool) so that the evaluation reasoning is isolated from the agent's
+  own reasoning chain, avoiding self-serving bias.
+
+linked_issues: []
+linked_prs: []

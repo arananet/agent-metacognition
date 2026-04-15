@@ -12,11 +12,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 project:
-  name: "{{PROJECT_NAME}}"
-  owner: "{{GITHUB_OWNER}}"
-  team: "{{TEAM_NAME}}"
-  domain: "{{PROJECT_DOMAIN}}"
-  description: "{{PROJECT_DESCRIPTION}}"
+  name: "agent-metacognition"
+  owner: "arananet"
+  team: "arana-research"
+  domain: "ai-agents"
+  description: "A POC applying Meta Cognition to AI agents for self-evolution and self-evaluation using the Claude SDK, by Eduardo Arana."
 
 spec:
   required_fields:
